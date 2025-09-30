@@ -1,43 +1,64 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/api/worker.ts
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import type { DurableObjectNamespace } from '@cloudflare/workers-types';
 
-// Impor kelas ChatRoom yang baru kita buat
-export { ChatRoom } from './chatRoom';
+import { ChatRoom, InMemoryChatRoom } from './chatRoom';
 
-const app = new Hono<{ Bindings: { CHAT_ROOM: DurableObjectNamespace } }>();
+type Bindings = {
+  CHAT_ROOM?: DurableObjectNamespace;
+};
 
-// Kebijakan CORS tetap sama
+const app = new Hono<{ Bindings: Bindings }>();
+
 app.use('*', cors({
   origin: (origin) => {
-    if (origin.endsWith('.vercel.app')) {
+    if (!origin || origin.endsWith('.vercel.app') || new URL(origin).hostname === 'localhost') {
       return origin;
     }
     return 'https://vite-react-workers.vercel.app';
   }
 }));
 
-const api = new Hono<{ Bindings: { CHAT_ROOM: DurableObjectNamespace } }>();
+const api = new Hono<{ Bindings: Bindings }>();
 
 api.get('/who', (c) => c.json({ name: 'Safa Framework' }));
 
-// Endpoint universal untuk chat yang akan diteruskan ke Durable Object
 api.all('/chat/*', async (c) => {
-  // 1. Dapatkan ID unik untuk Durable Object kita.
-  //    Kita gunakan ID statis "v1" agar semua pengguna terhubung ke objek yang sama.
-  const id = c.env.CHAT_ROOM.idFromName("v1");
+  if (c.env.CHAT_ROOM) {
+    console.log("[Chat] Menggunakan mode: Durable Object");
+    const id = c.env.CHAT_ROOM.idFromName("v1");
+    const room = c.env.CHAT_ROOM.get(id);
+    const path = new URL(c.req.url).pathname.replace('/api/chat', '');
+    const newUrl = `https://chat.internal${path}`;
 
-  // 2. Dapatkan "stub", yaitu pointer ke instance Durable Object yang sebenarnya.
-  const room = c.env.CHAT_ROOM.get(id);
+    const requestInit = {
+      method: c.req.method,
+      headers: c.req.header(),
+      body: c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : null,
+      redirect: 'manual',
+    };
 
-  // 3. Teruskan request dari klien langsung ke Durable Object.
-  //    Durable Object akan menangani logika WebSocket dan POST.
-  const url = new URL(c.req.url);
-  const path = url.pathname.replace('/api/chat', ''); // /websocket atau /message
+    // --- PERUBAHAN DI SINI ---
+    // Setelah mendapatkan respons, tegaskan tipenya sebagai `Response` standar global.
+    const doResponse = await room.fetch(newUrl, requestInit as any) as Response;
+    // --- AKHIR PERUBAHAN ---
 
-  return room.fetch(`https://chat.internal${path}`, c.req.raw);
+    // Sekarang, `doResponse.body` dan `doResponse.headers` akan memiliki tipe yang benar.
+    return new Response(doResponse.body, {
+      status: doResponse.status,
+      headers: doResponse.headers,
+    });
+
+  } else {
+    console.log("[Chat] Menggunakan mode: In-Memory");
+    // Gunakan globalThis.Request untuk kejelasan di sini juga
+    return InMemoryChatRoom.handleRequest(c.req.raw as globalThis.Request);
+  }
 });
 
 app.route('/api', api);
 
+export { ChatRoom };
 export default app;
