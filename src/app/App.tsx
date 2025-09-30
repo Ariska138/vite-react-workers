@@ -1,6 +1,6 @@
-// src/App.tsx
+// src/app/App.tsx
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react'; // Impor useEffect
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import cloudflareLogo from './assets/Cloudflare_Logo.svg';
@@ -11,9 +11,36 @@ function App() {
   const [count, setCount] = useState(0);
   const [name, setName] = useState('unknown');
 
+  // 1. State baru untuk menyimpan waktu dari SSE
+  const [time, setTime] = useState('connecting...');
+
+  // 2. useEffect untuk menangani koneksi EventSource
+  useEffect(() => {
+    // Buat koneksi baru ke endpoint SSE Anda
+    const eventSource = new EventSource('/api/time');
+
+    // Tangani pesan yang masuk
+    eventSource.onmessage = (event) => {
+      // Data dari server ada di event.data
+      setTime(event.data);
+    };
+
+    // Tangani jika ada error koneksi
+    eventSource.onerror = () => {
+      setTime('connection failed');
+      eventSource.close();
+    };
+
+    // 3. Fungsi cleanup untuk menutup koneksi saat komponen di-unmount
+    return () => {
+      eventSource.close();
+    };
+  }, []); // Array dependensi kosong agar efek ini hanya berjalan sekali
+
   return (
     <>
       <div>
+        {/* ... bagian logo tetap sama ... */}
         <a href="https://vite.dev" target="_blank">
           <img src={viteLogo} className="logo" alt="Vite logo" />
         </a>
@@ -31,7 +58,17 @@ function App() {
           />
         </a>
       </div>
+
       <h1>Vite + React + Hono + Cloudflare</h1>
+
+      {/* 4. Tampilkan data real-time dari SSE */}
+      <div className="card">
+        <p>Server time (real-time):</p>
+        <p>
+          <strong>{time}</strong>
+        </p>
+      </div>
+
       <div className="card">
         <button
           onClick={() => setCount((count) => count + 1)}
@@ -39,10 +76,8 @@ function App() {
         >
           count is {count}
         </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
       </div>
+
       <div className="card">
         <button
           onClick={() => {
@@ -54,9 +89,6 @@ function App() {
         >
           Name from API is: {name}
         </button>
-        <p>
-          Edit <code>api/index.ts</code> to change the name
-        </p>
       </div>
       <p className="read-the-docs">Click on the logos to learn more</p>
     </>
@@ -64,4 +96,3 @@ function App() {
 }
 
 export default App;
-
