@@ -1,6 +1,6 @@
 // api/index.ts
 import { handle } from 'hono/vercel';
-import app from '../src/api/index';
+import app from '../dist/vite_react_workers/index.js';
 
 // Hono's Vercel adapter akan mengubah aplikasi Hono menjadi
 // format yang bisa dijalankan oleh Vercel Serverless Function.
