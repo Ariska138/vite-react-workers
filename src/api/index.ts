@@ -1,8 +1,12 @@
 import { Hono } from "hono";
 import { streamSSE } from 'hono/streaming';
 
-const app = new Hono<{ Bindings: Env }>();
-const api = new Hono<{ Bindings: Env }>();
+
+// const app = new Hono<{ Bindings: Env }>();
+// const api = new Hono<{ Bindings: Env }>();
+const app = new Hono();
+const api = new Hono();
+
 
 api.get("/", (c) => c.json({ name: "Safa Framework" }));
 
