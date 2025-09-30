@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 
-import api from './src/api/index';
+import api from './src/api/worker';
 const app = new Hono();
 
 app.route("/", api);
