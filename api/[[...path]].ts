@@ -1,17 +1,11 @@
-// api/[[...path]].ts  (Vercel Edge Function - TypeScript, optional catch-all)
+// api/[[...path]].ts
 export const config = { runtime: 'edge' };
 
 const WORKER_BASE = 'https://worker.finlup.id';
 
 const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailers',
-  'transfer-encoding',
-  'upgrade',
+  'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+  'te', 'trailers', 'transfer-encoding', 'upgrade',
 ]);
 
 function filterHeaders(headers: Headers) {
@@ -23,15 +17,14 @@ function filterHeaders(headers: Headers) {
 }
 
 export default async function handler(req: Request) {
+  console.log(`[Vercel Proxy] Menerima request untuk: ${req.url}`); // <-- LOG 1
   try {
     const url = new URL(req.url);
-    // If no path segments after /api, use '' so target becomes /api
-    const afterApi = url.pathname.replace(/^\/api/, '') || ''; // '' or '/time' etc.
+    const afterApi = url.pathname.replace(/^\/api/, '') || '';
     const target = `${WORKER_BASE}/api${afterApi}${url.search}`;
+    console.log(`[Vercel Proxy] Meneruskan ke: ${target}`); // <-- LOG 2
 
     const forwardedHeaders = filterHeaders(req.headers);
-    // forwardedHeaders.set('host', new URL(WORKER_BASE).host); // optional
-
     const forwardedReq = new Request(target, {
       method: req.method,
       headers: forwardedHeaders,
@@ -40,18 +33,16 @@ export default async function handler(req: Request) {
     });
 
     const resFromWorker = await fetch(forwardedReq);
+    console.log(`[Vercel Proxy] Menerima status ${resFromWorker.status} dari worker.`); // <-- LOG 3
 
     const resHeaders = filterHeaders(resFromWorker.headers);
-
-    // Uncomment if you need to force CORS from Vercel origin:
-    // resHeaders.set('Access-Control-Allow-Origin', 'https://vite-react-workers.vercel.app');
-
     return new Response(resFromWorker.body, {
       status: resFromWorker.status,
       headers: resHeaders,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[Vercel Proxy] TERJADI ERROR: ${message}`); // <-- LOG 4
     return new Response('Proxy error: ' + message, { status: 502 });
   }
 }
