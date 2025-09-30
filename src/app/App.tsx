@@ -1,124 +1,66 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/app/App.tsx
-import { useState, useEffect, useRef } from 'react'; // Impor useEffect, useRef
+import { useState, useEffect, useRef, useCallback } from 'react';
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import cloudflareLogo from './assets/Cloudflare_Logo.svg';
 import honoLogo from './assets/hono.svg';
 import './App.css';
 
-type ChatPayload = { user: string; text: string; ts?: string };
+// Tipe data untuk pesan chat
+type Message = {
+  id: string;
+  user: string;
+  text: string;
+  ts: string;
+  type: 'user' | 'bot' | 'system';
+};
 
-function App() {
-  const [count, setCount] = useState(0);
-  const [name, setName] = useState('unknown');
+// Tipe untuk status koneksi chat
+type ChatStatus = 'connecting' | 'open' | 'closed' | 'error';
 
-  // SSE time
-  const [time, setTime] = useState('connecting...');
-
-  // Chat states
-  const [messages, setMessages] = useState<ChatPayload[]>([]);
-  const [msgInput, setMsgInput] = useState('');
-  const [displayName, setDisplayName] = useState<string>(() => {
-    // default simple name (you can change)
-    return (
-      localStorage.getItem('chat:name') ??
-      `user-${Math.floor(Math.random() * 9000 + 1000)}`
-    );
-  });
-  const [chatStatus, setChatStatus] = useState<
-    'connecting' | 'open' | 'closed' | 'error'
-  >('connecting');
-  const msgBoxRef = useRef<HTMLDivElement | null>(null);
-
-  // keep EventSource refs so we can close them on unmount
-  const timeESRef = useRef<EventSource | null>(null);
+// 1. Custom Hook untuk mengelola logika chat
+function useChat() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatStatus, setChatStatus] = useState<ChatStatus>('connecting');
   const chatESRef = useRef<EventSource | null>(null);
 
-  // Persist displayName
-  useEffect(() => {
-    localStorage.setItem('chat:name', displayName);
-  }, [displayName]);
-
-  // SSE for /api/time (unchanged)
-  useEffect(() => {
-    const es = new EventSource('/api/time');
-    timeESRef.current = es;
-
-    es.onmessage = (event) => {
-      setTime(event.data);
-    };
-
-    es.onerror = () => {
-      setTime('connection failed');
-      es.close();
-    };
-
-    return () => {
-      es.close();
-      timeESRef.current = null;
-    };
-  }, []);
-
-  // SSE for /api/chat (messages)
   useEffect(() => {
     const es = new EventSource('/api/chat');
     chatESRef.current = es;
     setChatStatus('connecting');
 
-    // default 'message' event (fallback)
-    es.addEventListener('message', (e: MessageEvent) => {
-      if (!e.data) return;
-      try {
-        const p = JSON.parse(e.data) as ChatPayload;
-        setMessages((m) => [...m, p]);
-      } catch {
-        // ignore parse errors
-      }
-    });
-
-    // custom 'joined' event (bot / user joined)
-    es.addEventListener('joined', (e: MessageEvent) => {
+    const handleNewMessage = (e: MessageEvent) => {
       try {
         if (e.data) {
-          const p = JSON.parse(e.data) as ChatPayload;
-          setMessages((m) => [...m, p]);
+          const newMessage = JSON.parse(e.data) as Message;
+          setMessages((prev) => [...prev, newMessage]);
         }
       } catch {
-        // ignore parse errors
+        // Abaikan error parsing
       }
-    });
+    };
 
-    // custom 'left' event
-    es.addEventListener('left', (e: MessageEvent) => {
-      try {
-        if (e.data) {
-          const p = JSON.parse(e.data) as ChatPayload;
-          setMessages((m) => [...m, p]);
-        }
-      } catch (e: any) {
-        console.log(e);
-      }
-    });
+    es.addEventListener('message', handleNewMessage);
+    es.addEventListener('joined', handleNewMessage);
+    es.addEventListener('left', handleNewMessage);
 
     es.onopen = () => {
       setChatStatus('open');
-      // optional: announce locally that we're connected
-      setMessages((m) => [
-        ...m,
+      setMessages((prev) => [
+        ...prev,
         {
+          id: crypto.randomUUID(),
           user: 'system',
-          text: 'Connected to chat server',
+          text: 'Terhubung ke server chat.',
           ts: new Date().toISOString(),
+          type: 'system',
         },
       ]);
     };
 
-    es.onerror = (err) => {
-      // EventSource will auto-reconnect by default; mark error state
-      console.warn('chat SSE error', err);
+    es.onerror = () => {
       setChatStatus('error');
-      // keep it open for reconnects; if you want to stop: es.close()
+      // EventSource akan mencoba koneksi ulang secara otomatis
     };
 
     return () => {
@@ -128,57 +70,80 @@ function App() {
     };
   }, []);
 
-  // autoscroll to bottom when messages change
+  return { messages, chatStatus };
+}
+
+// 2. Komponen terpisah untuk merender satu pesan
+const ChatMessage = ({ msg, currentUser }: { msg: Message; currentUser: string }) => {
+  const isOwn = msg.user === currentUser && msg.type === 'user';
+  const msgClass = `message ${isOwn ? 'own' : ''} ${msg.type}-message`;
+
+  return (
+    <div className={msgClass}>
+      {msg.type !== 'system' && (
+        <div className="meta">
+          <strong>{isOwn ? 'Anda' : msg.user}</strong>
+          <span style={{ marginLeft: 8 }}>
+            {new Date(msg.ts).toLocaleTimeString()}
+          </span>
+        </div>
+      )}
+      <div className="text">{msg.text}</div>
+    </div>
+  );
+};
+
+// Komponen Aplikasi Utama
+function App() {
+  const [count, setCount] = useState(0);
+  const [name, setName] = useState('unknown');
+  const { messages, chatStatus } = useChat();
+
+  const [msgInput, setMsgInput] = useState('');
+  const [displayName, setDisplayName] = useState<string>(
+    () => localStorage.getItem('chat:name') ?? `user-${Math.floor(Math.random() * 9000 + 1000)}`
+  );
+  const msgBoxRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('chat:name', displayName);
+  }, [displayName]);
+
   useEffect(() => {
     const el = msgBoxRef.current;
-    if (!el) return;
-    // small timeout to wait DOM update
-    setTimeout(() => {
+    if (el) {
       el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    }, 30);
+    }
   }, [messages]);
 
-  // helper to send message via POST /api/chat
-  async function sendMessage() {
+  const sendMessage = useCallback(async () => {
     const text = msgInput.trim();
     if (!text) return;
-    const payload = { user: displayName, text };
+
     try {
-      await fetch('/api/chat', {
+      const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ user: displayName, text }),
       });
-      // optionally append locally (server will broadcast back anyway)
-      setMessages((m) => [
-        ...m,
-        { user: displayName, text, ts: new Date().toISOString() },
-      ]);
+      if (!res.ok) throw new Error('Gagal mengirim pesan');
       setMsgInput('');
     } catch (err) {
-      console.error('failed send', err);
-      setMessages((m) => [
-        ...m,
-        {
-          user: 'system',
-          text: 'Failed to send message',
-          ts: new Date().toISOString(),
-        },
-      ]);
+      console.error('Gagal mengirim:', err);
+      // Anda bisa menambahkan pesan error ke state messages di sini
     }
-  }
+  }, [msgInput, displayName]);
 
-  // send on Enter
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       sendMessage();
     }
-  }
+  };
 
   return (
     <>
-      <div>
+      <div className="logos">
         <a href="https://vite.dev" target="_blank" rel="noreferrer">
           <img src={viteLogo} className="logo" alt="Vite logo" />
         </a>
@@ -186,105 +151,63 @@ function App() {
           <img src={reactLogo} className="logo react" alt="React logo" />
         </a>
         <a href="https://hono.dev/" target="_blank" rel="noreferrer">
-          <img src={honoLogo} className="logo cloudflare" alt="Hono logo" />
+          <img src={honoLogo} className="logo hono" alt="Hono logo" />
         </a>
-        <a
-          href="https://workers.cloudflare.com/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          <img
-            src={cloudflareLogo}
-            className="logo cloudflare"
-            alt="Cloudflare logo"
-          />
+        <a href="https://workers.cloudflare.com/" target="_blank" rel="noreferrer">
+          <img src={cloudflareLogo} className="logo cloudflare" alt="Cloudflare logo" />
         </a>
       </div>
 
       <h1>Vite + React + Hono + Cloudflare</h1>
 
-      {/* Server time */}
       <div className="card">
-        <p>Server time (real-time):</p>
-        <p>
-          <strong>{time}</strong>
-        </p>
-      </div>
-
-      <div className="card">
-        <button onClick={() => setCount((c) => c + 1)} aria-label="increment">
-          count is {count}
+        <button onClick={() => setCount((c) => c + 1)}>
+          Hitungan: {count}
         </button>
-      </div>
-
-      <div className="card">
         <button
+          style={{ marginLeft: 16 }}
           onClick={() => {
             fetch('/api/who')
               .then((res) => res.json() as Promise<{ name: string }>)
               .then((data) => setName(data.name));
           }}
-          aria-label="get name"
         >
-          Name from API is: {name}
+          Nama dari API: {name}
         </button>
       </div>
 
-      {/* Chat UI */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <h2>Chat (SSE)</h2>
-        <div style={{ marginBottom: 8 }}>
-          <label>
-            Nama:
+      <div className="card">
+        <div className="chat-container">
+          <h2>Real-time Chat</h2>
+          <div className="chat-header">
+            <label>
+              Nama:
+              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+            </label>
+            <span className="status-indicator">
+              Status: <strong>{chatStatus}</strong>
+            </span>
+          </div>
+
+          <div ref={msgBoxRef} className="messages-box">
+            {messages.map((m) => (
+              <ChatMessage key={m.id} msg={m} currentUser={displayName} />
+            ))}
+          </div>
+
+          <div className="message-input-area">
             <input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              style={{ marginLeft: 8 }}
+              placeholder="Tulis pesan..."
+              value={msgInput}
+              onChange={(e) => setMsgInput(e.target.value)}
+              onKeyDown={handleKeyDown}
             />
-          </label>
-          <span style={{ marginLeft: 12, fontSize: 12, color: '#666' }}>
-            Status: <strong>{chatStatus}</strong>
-          </span>
-        </div>
-
-        <div
-          ref={msgBoxRef}
-          style={{
-            height: 240,
-            overflow: 'auto',
-            border: '1px solid #ccc',
-            padding: 8,
-            borderRadius: 6,
-            background: '#fff',
-          }}
-        >
-          {messages.map((m, i) => (
-            <div key={i} style={{ marginBottom: 6 }}>
-              <small style={{ color: '#666', marginRight: 6 }}>
-                {m.ts ? new Date(m.ts).toLocaleTimeString() : ''}
-              </small>
-              <strong style={{ marginRight: 6 }}>{m.user}</strong>:{' '}
-              <span style={{ marginLeft: 6 }}>{m.text}</span>
-            </div>
-          ))}
-        </div>
-
-        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-          <input
-            placeholder="Tulis pesan..."
-            value={msgInput}
-            onChange={(e) => setMsgInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={{ flex: 1 }}
-          />
-          <button onClick={sendMessage}>Kirim</button>
+            <button onClick={sendMessage}>Kirim</button>
+          </div>
         </div>
       </div>
-
-      <p className="read-the-docs">Click on the logos to learn more</p>
     </>
   );
 }
 
 export default App;
-

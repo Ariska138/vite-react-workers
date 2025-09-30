@@ -1,25 +1,28 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // src/api/worker.ts
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE, SSEStreamingApi } from 'hono/streaming';
 
-type ChatPayload = { user: string; text: string; ts?: string };
-type SSEEntry = { stream: SSEStreamingApi; id: string };
+// Definisikan tipe data yang lebih ketat
+type ChatPayload = {
+  id: string;
+  user: string;
+  text: string;
+  ts: string;
+  type: 'user' | 'bot' | 'system';
+};
 
 const app = new Hono<{ Bindings: Env }>();
 
-// Simple CORS (sesuaikan origin)
-const allowedOrigins = [
-  'https://vite-react-workers.vercel.app',
-];
-
+// Kebijakan CORS yang disederhanakan untuk Vercel
 app.use('*', cors({
   origin: (origin) => {
-    if (!origin) return 'https://vite-react-workers.vercel.app';
-    if (allowedOrigins.includes(origin)) return origin;
-    if (/\.vercel\.app$/.test(origin)) return origin;
+    if (origin.endsWith('.vercel.app')) {
+      return origin;
+    }
+    // Fallback ke URL produksi utama jika origin tidak ada (misalnya, dari cURL)
     return 'https://vite-react-workers.vercel.app';
   }
 }));
@@ -29,89 +32,96 @@ const api = new Hono<{ Bindings: Env }>();
 api.get('/who', (c) => c.json({ name: 'Safa Framework' }));
 
 /**
- * In-memory broadcaster:
- * - connected: Set of SSEStream writers (wrapped)
- *
- * Note: In Cloudflare Workers / serverless env this is ephemeral and not reliable
- * across multiple instances — for production gunakan Durable Objects / Redis / PubSub.
+ * Broadcaster di dalam memori:
+ * - Menyimpan semua koneksi SSE yang aktif.
+ * - PENTING: Dalam lingkungan serverless seperti Cloudflare Workers, state ini
+ * bersifat sementara dan tidak dibagikan antar instance. Jika aplikasi Anda
+ * membutuhkan skalabilitas atau persistensi state, gunakan Durable Objects,
+* KV, atau layanan Pub/Sub seperti Redis.
  */
 const connected = new Set<SSEStreamingApi>();
 
-function broadcast(payload: ChatPayload, eventName = 'message') {
-  const data = JSON.stringify(payload);
-  // Copy to array to avoid mutation while iterating
+function broadcast(payload: Omit<ChatPayload, 'id' | 'ts'>, eventName = 'message') {
+  // Buat payload penuh di server untuk memastikan konsistensi data
+  const message: ChatPayload = {
+    ...payload,
+    id: crypto.randomUUID(),
+    ts: new Date().toISOString(),
+  };
+
+  const data = JSON.stringify(message);
+
+  // Salin ke array agar aman saat iterasi jika ada modifikasi pada Set
   Array.from(connected).forEach(async (s) => {
     try {
       await s.writeSSE({ event: eventName, data });
     } catch (err: any) {
-      // ignore write errors; streamSSE will close broken streams automatically
+      // Abaikan error penulisan; streamSSE akan menutup koneksi yang rusak secara otomatis.
+      // Anda bisa menambahkan logging di sini jika perlu.
     }
   });
 }
 
-// Helper to create server-side bot greeting
-function botGreetingFor(user = 'guest'): ChatPayload {
+// Helper untuk membuat pesan sapaan dari bot
+function botGreetingFor(user = 'guest'): Omit<ChatPayload, 'id' | 'ts'> {
   return {
     user: 'bot',
-    text: `Halo ${user}! Selamat datang di chat — saya bot siap bantu.`,
-    ts: new Date().toISOString(),
+    text: `Halo ${user}! Selamat datang di chat.`,
+    type: 'bot',
   };
 }
 
-// SSE endpoint for clients to listen to chat
+// Endpoint SSE untuk mendengarkan pesan chat
 api.get('/chat', (c) => {
   return streamSSE(c, async (stream) => {
-    // Add stream to connected set
     connected.add(stream);
 
-    // Send initial welcome message to the new client (optional: as private)
-    // Here we broadcast bot join so everyone sees it
     const greet = botGreetingFor('pengguna baru');
-    await stream.writeSSE({ event: 'joined', data: JSON.stringify(greet) });
     broadcast(greet, 'joined');
 
-    // keep the connection alive with a comment ping every 20s
+    // Kirim ping untuk menjaga koneksi tetap hidup setiap 20 detik
     const keepAlive = setInterval(() => {
-      // some runtimes ignore comment; using writeSSE with empty data works
-      stream.writeSSE({ data: '' }).catch(() => { });
+      stream.writeSSE({ data: '' }).catch(() => {});
     }, 20_000);
 
-    // wait until client closes connection (streamSSE promise resolves when closed)
+    // Tunggu hingga koneksi ditutup oleh klien
     await new Promise<void>((resolve) => {
       stream.onAbort(() => {
         resolve();
       });
     });
 
-    // cleanup
+    // Proses pembersihan setelah klien terputus
     clearInterval(keepAlive);
     connected.delete(stream);
 
-    // broadcast that a user left (optional)
-    const leave: ChatPayload = { user: 'bot', text: 'Seorang pengguna meninggalkan chat.', ts: new Date().toISOString() };
-    broadcast(leave, 'left');
+    // Siarkan bahwa seorang pengguna telah pergi
+    const leaveMessage: Omit<ChatPayload, 'id' | 'ts'> = {
+      user: 'system',
+      text: 'Seorang pengguna meninggalkan chat.',
+      type: 'system',
+    };
+    broadcast(leaveMessage, 'left');
   });
 });
 
-// POST endpoint agar client mengirim pesan ke semua listener SSE
+// Endpoint POST untuk klien mengirim pesan
 api.post('/chat', async (c) => {
   try {
-    const body = await c.req.json() as Partial<ChatPayload> | undefined;
+    const body = await c.req.json<{ user?: string; text?: string }>();
     if (!body || typeof body.text !== 'string' || typeof body.user !== 'string') {
-      return c.json({ ok: false, error: 'bad payload, expected { user, text }' }, 400);
+      return c.json({ ok: false, error: 'Payload tidak valid, harus berupa { user, text }' }, 400);
     }
 
-    const payload: ChatPayload = {
+    const payload: Omit<ChatPayload, 'id' | 'ts'> = {
       user: body.user,
       text: body.text,
-      ts: new Date().toISOString(),
+      type: 'user',
     };
 
-    // broadcast to all connected SSE clients
     broadcast(payload, 'message');
 
-    // simple echo response
-    return c.json({ ok: true, payload });
+    return c.json({ ok: true });
   } catch (err) {
     return c.json({ ok: false, error: (err as Error).message }, 500);
   }

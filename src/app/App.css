@@ -1,13 +1,73 @@
+/* src/app/App.css */
+
+/* GENERAL STYLES */
+:root {
+  --background-color: #242424;
+  --text-color: rgba(255, 255, 255, 0.87);
+  --card-background: #1a1a1a;
+  --border-color: #555;
+  --input-background: #333;
+  --accent-color: #646cff;
+  --accent-hover-color: #535bf2;
+  --system-message-color: #888;
+
+  /* Chat bubble colors */
+  --bubble-own-bg: #4f58ff;
+  --bubble-own-text: white;
+  --bubble-other-bg: #3a3a3a;
+  --bubble-other-text: var(--text-color);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --background-color: #ffffff;
+    --text-color: #213547;
+    --card-background: #f9f9f9;
+    --border-color: #ccc;
+    --input-background: #fff;
+    --accent-color: #747bff;
+    --accent-hover-color: #535bf2;
+    --system-message-color: #666;
+
+    /* Chat bubble colors */
+    --bubble-own-bg: #747bff;
+    --bubble-own-text: white;
+    --bubble-other-bg: #f1f1f1;
+    --bubble-other-text: var(--text-color);
+  }
+}
+
+body {
+  background-color: var(--background-color);
+  color: var(--text-color);
+}
+
 #root {
-  max-width: 1280px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 2rem;
   text-align: center;
 }
 
-.logo {
-  height: 6em;
+.card {
   padding: 1.5em;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background-color: var(--card-background);
+  margin-bottom: 1.5rem;
+}
+
+.logos {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.logo {
+  height: 5em;
+  padding: 1em;
   will-change: filter;
   transition: filter 300ms;
 }
@@ -17,29 +77,124 @@
 .logo.react:hover {
   filter: drop-shadow(0 0 2em #61dafbaa);
 }
+.logo.hono:hover {
+  filter: drop-shadow(0 0 2em #e36112aa);
+}
 .logo.cloudflare:hover {
   filter: drop-shadow(0 0 2em #f6821faa);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* CHAT UI STYLES */
+.chat-container {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.chat-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0 0.5rem;
 }
 
-.card {
-  padding: 2em;
+.chat-header label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
-.read-the-docs {
-  color: #888;
+.status-indicator {
+  font-size: 0.8rem;
+  color: var(--system-message-color);
+}
+
+.messages-box {
+  height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  padding: 1rem;
+  border-radius: 8px;
+  background-color: var(--background-color);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.message {
+  max-width: 80%;
+  padding: 0.5rem 0.8rem;
+  border-radius: 12px;
+  line-height: 1.4;
+  display: flex;
+  flex-direction: column;
+}
+
+.message .meta {
+  font-size: 0.75rem;
+  color: var(--system-message-color);
+  margin-bottom: 0.25rem;
+}
+
+.message.user-message {
+  background-color: var(--bubble-other-bg);
+  color: var(--bubble-other-text);
+  align-self: flex-start;
+  border-bottom-left-radius: 2px;
+}
+
+.message.own {
+  background-color: var(--bubble-own-bg);
+  color: var(--bubble-own-text);
+  align-self: flex-end;
+  border-bottom-right-radius: 2px;
+}
+.message.own .meta {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.message.system,
+.message.bot {
+  align-self: center;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--system-message-color);
+  background: none;
+  width: 100%;
+}
+
+.message-input-area {
+  display: flex;
+  gap: 0.5rem;
+}
+
+input {
+  flex: 1;
+  padding: 0.6em 1em;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background-color: var(--input-background);
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 1em;
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.25s;
+  background-color: var(--accent-color);
+  color: white;
+}
+button:hover {
+  background-color: var(--accent-hover-color);
+  filter: brightness(1.1);
 }
