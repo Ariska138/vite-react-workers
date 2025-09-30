@@ -22,11 +22,17 @@ type ChatStatus = 'connecting' | 'open' | 'closed' | 'error';
 function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatStatus, setChatStatus] = useState<ChatStatus>('connecting');
-  const chatESRef = useRef<EventSource | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    const es = new EventSource('/api/chat');
-    chatESRef.current = es;
+    // Tentukan URL WebSocket (ws:// untuk lokal, wss:// untuk produksi)
+    const wsUrl =
+      (window.location.protocol === 'https:' ? 'wss://' : 'ws://') +
+      window.location.host +
+      '/api/chat/websocket';
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
     setChatStatus('connecting');
 
     const handleNewMessage = (e: MessageEvent) => {
@@ -40,41 +46,54 @@ function useChat() {
       }
     };
 
-    es.addEventListener('message', handleNewMessage);
-    es.addEventListener('joined', handleNewMessage);
-    es.addEventListener('left', handleNewMessage);
+    ws.addEventListener('message', handleNewMessage);
 
-    es.onopen = () => {
+    ws.onopen = () => {
       setChatStatus('open');
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          user: 'system',
-          text: 'Terhubung ke server chat.',
-          ts: new Date().toISOString(),
-          type: 'system',
-        },
-      ]);
     };
 
-    es.onerror = () => {
+    ws.onerror = () => {
       setChatStatus('error');
-      // EventSource akan mencoba koneksi ulang secara otomatis
+    };
+
+    ws.onclose = () => {
+      setChatStatus('closed');
     };
 
     return () => {
-      es.close();
-      chatESRef.current = null;
-      setChatStatus('closed');
+      ws.close();
+      wsRef.current = null;
     };
   }, []);
 
-  return { messages, chatStatus };
+  // Fungsi sendMessage tetap sama, tapi sekarang menargetkan endpoint /message
+  const sendMessage = useCallback(async (displayName: string, text: string) => {
+    if (!text) return;
+
+    try {
+      const res = await fetch('/api/chat/message', {
+        // <-- URL diubah
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user: displayName, text }),
+      });
+      if (!res.ok) throw new Error('Gagal mengirim pesan');
+    } catch (err) {
+      console.error('Gagal mengirim:', err);
+    }
+  }, []);
+
+  return { messages, chatStatus, sendMessage };
 }
 
 // 2. Komponen terpisah untuk merender satu pesan
-const ChatMessage = ({ msg, currentUser }: { msg: Message; currentUser: string }) => {
+const ChatMessage = ({
+  msg,
+  currentUser,
+}: {
+  msg: Message;
+  currentUser: string;
+}) => {
   const isOwn = msg.user === currentUser && msg.type === 'user';
   const msgClass = `message ${isOwn ? 'own' : ''} ${msg.type}-message`;
 
@@ -95,13 +114,15 @@ const ChatMessage = ({ msg, currentUser }: { msg: Message; currentUser: string }
 
 // Komponen Aplikasi Utama
 function App() {
+  const { messages, chatStatus, sendMessage } = useChat();
   const [count, setCount] = useState(0);
   const [name, setName] = useState('unknown');
-  const { messages, chatStatus } = useChat();
 
   const [msgInput, setMsgInput] = useState('');
   const [displayName, setDisplayName] = useState<string>(
-    () => localStorage.getItem('chat:name') ?? `user-${Math.floor(Math.random() * 9000 + 1000)}`
+    () =>
+      localStorage.getItem('chat:name') ??
+      `user-${Math.floor(Math.random() * 9000 + 1000)}`
   );
   const msgBoxRef = useRef<HTMLDivElement | null>(null);
 
@@ -116,28 +137,10 @@ function App() {
     }
   }, [messages]);
 
-  const sendMessage = useCallback(async () => {
-    const text = msgInput.trim();
-    if (!text) return;
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: displayName, text }),
-      });
-      if (!res.ok) throw new Error('Gagal mengirim pesan');
-      setMsgInput('');
-    } catch (err) {
-      console.error('Gagal mengirim:', err);
-      // Anda bisa menambahkan pesan error ke state messages di sini
-    }
-  }, [msgInput, displayName]);
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      sendMessage();
+      sendMessage(displayName, msgInput);
     }
   };
 
@@ -153,8 +156,16 @@ function App() {
         <a href="https://hono.dev/" target="_blank" rel="noreferrer">
           <img src={honoLogo} className="logo hono" alt="Hono logo" />
         </a>
-        <a href="https://workers.cloudflare.com/" target="_blank" rel="noreferrer">
-          <img src={cloudflareLogo} className="logo cloudflare" alt="Cloudflare logo" />
+        <a
+          href="https://workers.cloudflare.com/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <img
+            src={cloudflareLogo}
+            className="logo cloudflare"
+            alt="Cloudflare logo"
+          />
         </a>
       </div>
 
@@ -182,7 +193,10 @@ function App() {
           <div className="chat-header">
             <label>
               Nama:
-              <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+              <input
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
             </label>
             <span className="status-indicator">
               Status: <strong>{chatStatus}</strong>
@@ -202,7 +216,9 @@ function App() {
               onChange={(e) => setMsgInput(e.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <button onClick={sendMessage}>Kirim</button>
+            <button onClick={() => sendMessage(displayName, msgInput)}>
+              Kirim
+            </button>
           </div>
         </div>
       </div>
@@ -211,3 +227,4 @@ function App() {
 }
 
 export default App;
+
