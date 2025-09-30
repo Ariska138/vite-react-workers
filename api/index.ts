@@ -1,4 +1,4 @@
 // File: api/index.ts
-import app from '../src/api/index';
+import { api } from '../src/api/index';
 
-export default app.fetch;
+export default api.fetch;

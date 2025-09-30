@@ -19,4 +19,6 @@ api.get("/", (c) => c.json({ name: "Safa Framework" }));
 
 app.route("/api", api);
 
+export { api };
+
 export default app;
