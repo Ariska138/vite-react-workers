@@ -98,7 +98,7 @@ export class ChatRoom {
     });
 
     // Tangani pesan yang masuk dari klien (opsional, karena kita pakai POST)
-    ws.addEventListener("message", async (msg) => {
+    ws.addEventListener("message", async (_msg) => {
       // Di arsitektur ini, kita mengirim pesan via POST, jadi ini bisa dikosongkan
       // atau digunakan untuk hal lain seperti sinyal 'typing...'
     });
