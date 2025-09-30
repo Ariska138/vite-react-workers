@@ -18,21 +18,18 @@ type Message = {
 // Tipe untuk status koneksi chat
 type ChatStatus = 'connecting' | 'open' | 'closed' | 'error';
 
-// 1. Custom Hook untuk mengelola logika chat
+// 1. Custom Hook untuk logika chat dengan SSE
 function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [chatStatus, setChatStatus] = useState<ChatStatus>('connecting');
-  const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    // Tentukan URL WebSocket (ws:// untuk lokal, wss:// untuk produksi)
-    const wsUrl =
-      (window.location.protocol === 'https:' ? 'wss://' : 'ws://') +
-      window.location.host +
-      '/api/chat/websocket';
+    // URL endpoint SSE
+    const sseUrl = '/api/chat/events';
 
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    const events = new EventSource(sseUrl);
+    eventSourceRef.current = events;
     setChatStatus('connecting');
 
     const handleNewMessage = (e: MessageEvent) => {
@@ -41,52 +38,63 @@ function useChat() {
           const newMessage = JSON.parse(e.data) as Message;
           setMessages((prev) => [...prev, newMessage]);
         }
-      } catch {
-        // Abaikan error parsing
+      } catch (err) {
+        console.error('Gagal mem-parsing data pesan:', err);
       }
     };
 
-    ws.addEventListener('message', handleNewMessage);
+    events.addEventListener('message', handleNewMessage);
 
-    ws.onopen = () => {
+    events.onopen = () => {
       setChatStatus('open');
     };
 
-    ws.onerror = () => {
+    events.onerror = () => {
       setChatStatus('error');
-    };
-
-    ws.onclose = () => {
-      setChatStatus('closed');
+      events.close(); // Tutup koneksi jika terjadi error
     };
 
     return () => {
-      ws.close();
-      wsRef.current = null;
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
+      setChatStatus('closed');
     };
   }, []);
 
-  // Fungsi sendMessage tetap sama, tapi sekarang menargetkan endpoint /message
+  // Fungsi sendMessage tetap sama, karena menggunakan fetch POST
   const sendMessage = useCallback(async (displayName: string, text: string) => {
-    if (!text) return;
+    if (!text || !displayName) return;
 
     try {
       const res = await fetch('/api/chat/message', {
-        // <-- URL diubah
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user: displayName, text }),
       });
-      if (!res.ok) throw new Error('Gagal mengirim pesan');
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Gagal mengirim pesan: ${res.status} ${errorText}`);
+      }
     } catch (err) {
       console.error('Gagal mengirim:', err);
+      // Tambahkan pesan error ke chat untuk feedback ke pengguna
+      const errorMsg: Message = {
+        id: crypto.randomUUID(),
+        user: 'system',
+        text: 'Pesan Anda gagal terkirim.',
+        ts: new Date().toISOString(),
+        type: 'system',
+      };
+      setMessages((prev) => [...prev, errorMsg]);
     }
   }, []);
 
   return { messages, chatStatus, sendMessage };
 }
 
-// 2. Komponen terpisah untuk merender satu pesan
+// 2. Komponen ChatMessage (tidak ada perubahan)
 const ChatMessage = ({
   msg,
   currentUser,
@@ -137,10 +145,15 @@ function App() {
     }
   }, [messages]);
 
+  const handleSend = () => {
+    sendMessage(displayName, msgInput);
+    setMsgInput(''); // Kosongkan input setelah mengirim
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
-      sendMessage(displayName, msgInput);
+      handleSend();
     }
   };
 
@@ -170,6 +183,7 @@ function App() {
       </div>
 
       <h1>Vite + React + Hono + Cloudflare</h1>
+      <h2>Real-time Updates with SSE</h2>
 
       <div className="card">
         <button onClick={() => setCount((c) => c + 1)}>
@@ -189,7 +203,7 @@ function App() {
 
       <div className="card">
         <div className="chat-container">
-          <h2>Real-time Chat</h2>
+          <h2>Real-time Data Stream (SSE)</h2>
           <div className="chat-header">
             <label>
               Nama:
@@ -216,9 +230,7 @@ function App() {
               onChange={(e) => setMsgInput(e.target.value)}
               onKeyDown={handleKeyDown}
             />
-            <button onClick={() => sendMessage(displayName, msgInput)}>
-              Kirim
-            </button>
+            <button onClick={handleSend}>Kirim</button>
           </div>
         </div>
       </div>
@@ -227,4 +239,3 @@ function App() {
 }
 
 export default App;
-

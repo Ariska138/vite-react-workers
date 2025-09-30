@@ -13,29 +13,35 @@ type ChatPayload = {
 
 export class ChatRoom {
   state: DurableObjectState;
-  sessions: WebSocket[] = [];
+  // Ganti array WebSocket dengan Set dari stream controllers untuk SSE
+  controllers: Set<ReadableStreamDefaultController> = new Set();
 
   constructor(state: DurableObjectState) {
     this.state = state;
   }
 
-  // Fungsi untuk menyiarkan pesan ke semua koneksi WebSocket yang aktif
-  broadcast(payload: Omit<ChatPayload, 'id' | 'ts'>) {
+  // Fungsi helper untuk meng-encode pesan ke format SSE
+  encodeMessage(payload: Omit<ChatPayload, 'id' | 'ts'>): string {
     const message: ChatPayload = {
       ...payload,
       id: crypto.randomUUID(),
       ts: new Date().toISOString(),
     };
     const data = JSON.stringify(message);
+    // Format SSE: "data: <json string>\n\n"
+    return `data: ${data}\n\n`;
+  }
 
-    // Kirim pesan ke setiap sesi yang masih terbuka
-    this.sessions = this.sessions.filter(session => {
+  // Fungsi broadcast sekarang menggunakan stream controllers
+  broadcast(payload: Omit<ChatPayload, 'id' | 'ts'>) {
+    const message = this.encodeMessage(payload);
+    // Kirim pesan ke setiap klien yang terhubung
+    this.controllers.forEach(controller => {
       try {
-        session.send(data);
-        return true;
+        controller.enqueue(message);
       } catch (err) {
-        // Hapus sesi jika sudah tertutup
-        return false;
+        // Controller ini kemungkinan sudah ditutup, hapus dari daftar
+        this.controllers.delete(controller);
       }
     });
   }
@@ -44,32 +50,54 @@ export class ChatRoom {
   async fetch(request: Request) {
     const url = new URL(request.url);
 
-    // Rute untuk menangani koneksi WebSocket
-    if (url.pathname.endsWith("/websocket")) {
-      const upgradeHeader = request.headers.get('Upgrade');
-      if (!upgradeHeader || upgradeHeader !== 'websocket') {
-        return new Response('Expected Upgrade: websocket', { status: 426 });
-      }
+    // Rute untuk membuat koneksi SSE
+    if (url.pathname.endsWith("/events")) {
+      // Buat stream yang bisa kita tulis dan bisa dibaca oleh klien.
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+      const controller = {
+        enqueue: (chunk: string) => writer.write(new TextEncoder().encode(chunk)),
+        close: () => writer.close(),
+        error: (err: any) => writer.abort(err),
+      };
 
-      // Terima koneksi WebSocket
-      const [client, server] = Object.values(new WebSocketPair());
-      await this.handleSession(server);
+      this.controllers.add(controller as any); // Simpan controller
 
-      // Kirim respons untuk menyelesaikan handshake WebSocket
-      return new Response(null, {
-        status: 101,
-        webSocket: client,
+      // Saat klien memutuskan koneksi, readable stream akan di-abort.
+      request.signal.addEventListener('abort', () => {
+        this.controllers.delete(controller as any);
+        // Siarkan bahwa pengguna telah pergi
+        this.broadcast({
+          user: 'system',
+          text: 'Seorang pengguna meninggalkan chat.',
+          type: 'system'
+        });
+      }, { once: true });
+
+      // Siarkan pesan selamat datang saat pengguna baru bergabung
+      this.broadcast({
+        user: 'bot',
+        text: 'Seorang pengguna baru telah bergabung.',
+        type: 'bot'
+      });
+
+      // Kembalikan response streaming
+      return new Response(readable, {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
       });
     }
 
-    // Rute untuk menerima pesan via POST
+    // Rute untuk menerima pesan via POST (tetap sama)
     if (request.method === "POST" && url.pathname.endsWith("/message")) {
       try {
         const body = await request.json<{ user?: string; text?: string }>();
         if (!body || typeof body.text !== 'string' || typeof body.user !== 'string') {
           return new Response('Payload tidak valid', { status: 400 });
         }
-
         const payload: Omit<ChatPayload, 'id' | 'ts'> = {
           user: body.user,
           text: body.text,
@@ -83,35 +111,5 @@ export class ChatRoom {
     }
 
     return new Response("Not found", { status: 404 });
-  }
-
-  // Menangani sesi WebSocket baru
-  async handleSession(ws: WebSocket) {
-    (ws as any).accept();
-    this.sessions.push(ws);
-
-    // Siarkan pesan selamat datang saat pengguna baru bergabung
-    this.broadcast({
-      user: 'bot',
-      text: 'Seorang pengguna baru telah bergabung.',
-      type: 'bot'
-    });
-
-    // Tangani pesan yang masuk dari klien (opsional, karena kita pakai POST)
-    ws.addEventListener("message", async (_msg) => {
-      // Di arsitektur ini, kita mengirim pesan via POST, jadi ini bisa dikosongkan
-      // atau digunakan untuk hal lain seperti sinyal 'typing...'
-    });
-
-    // Tangani saat koneksi ditutup
-    ws.addEventListener("close", () => {
-      // Hapus sesi dari daftar
-      this.sessions = this.sessions.filter(s => s !== ws);
-      this.broadcast({
-        user: 'system',
-        text: 'Seorang pengguna meninggalkan chat.',
-        type: 'system'
-      });
-    });
   }
 }
