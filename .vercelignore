@@ -1,5 +1,4 @@
 src/api/worker.ts
 .wrangler
 wrangler.json
-worker-configuration.d.ts
 server.ts
