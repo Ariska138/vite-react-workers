@@ -1,0 +1,33 @@
+# Dependency directories
+
+/node_modules
+
+## Git files
+
+.git
+.gitignore
+
+## Vercel-specific files
+
+## The 'api' directory at the root is for the Vercel adapter
+
+## The worker source is in 'src/api'
+
+/api
+vercel.json
+
+## Local Node.js development server entrypoint
+
+server.ts
+
+## Environment variables
+
+.env
+.env.*
+!.env.example
+
+## IDE and OS specific files
+
+.vscode
+.idea
+*.DS_Store
