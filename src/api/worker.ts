@@ -26,7 +26,7 @@ app.use('*', cors({
 
 const api = new Hono<{ Bindings: Env }>();
 
-api.get("/", (c) => c.json({ name: "Safa Framework" }));
+api.get("/who", (c) => c.json({ name: "Safa Framework" }));
 
 // Rute baru untuk SSE
 api.get('/time', (c) => {
