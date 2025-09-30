@@ -43,7 +43,7 @@
     "cf-typegen": "wrangler types",
     "check": "tsc && vite build && wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
-    "dev": "kill-port 3000 && concurrently \"nodemon --watch server --ext ts --exec 'bun server.ts'\" \"vite\"",
+    "dev": "kill-port 3000 && concurrently \"nodemon --watch 'server.ts' --ext ts --exec 'bun server.ts'\" \"vite\"",
     "lint": "eslint .",
     "preview": "npm run build && vite preview"
   },

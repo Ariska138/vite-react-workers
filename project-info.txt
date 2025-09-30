@@ -5,9 +5,11 @@
 📄 package.json
 📁 public/
   📄 vite.svg
-📄 server.js
+📄 server.ts
 📁 src/
-  📁 react-app/
+  📁 api/
+    📄 index.ts
+  📁 app/
     📄 App.css
     📄 App.tsx
     📁 assets/
@@ -17,8 +19,6 @@
     📄 index.css
     📄 main.tsx
     📄 vite-env.d.ts
-  📁 worker/
-    📄 index.ts
 📄 tsconfig.app.json
 📄 tsconfig.json
 📄 tsconfig.node.json
@@ -67,19 +67,20 @@ export default tseslint.config(
 === File: index.html ===
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
-  </head>
 
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/react-app/main.tsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vite + React + TS</title>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/app/main.tsx"></script>
+</body>
+
 </html>
-
 
 === File: package.json ===
 {
@@ -131,18 +132,21 @@ export default tseslint.config(
     "lint": "eslint .",
     "preview": "npm run build && vite preview"
   },
-  "type": "module"
+  "type": "module",
+  "optionalDependencies": {
+    "@hono/node-server": "^1.19.5"
+  }
 }
 
 
-=== File: server.js ===
+=== File: server.ts ===
 import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 
-import api from './src/worker/index';
+import api from './src/api/index';
 const app = new Hono();
 
-app.use(api);
+app.route("/api", api);
 
 const port = parseInt(process.env.PORT || '3000', 10);
 serve({ fetch: app.fetch, port });
@@ -174,7 +178,7 @@ console.log(`🚀 Server running at http://localhost:${port}`);
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src/react-app"]
+  "include": ["src/app"]
 }
 
 
@@ -223,7 +227,7 @@ console.log(`🚀 Server running at http://localhost:${port}`);
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
     "types": ["vite/client", "./worker-configuration.d.ts"]
   },
-  "include": ["src/worker"]
+  "include": ["src/api"]
 }
 
 
@@ -7596,7 +7600,7 @@ declare abstract class WorkflowInstance {
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "vite-react-workers",
-  "main": "./src/worker/index.ts",
+  "main": "./src/api/index.ts",
   "compatibility_date": "2025-04-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
@@ -7610,11 +7614,12 @@ declare abstract class WorkflowInstance {
 }
 
 
+
 === File: public/vite.svg ===
 [Binary or unreadable file]
 
 
-=== File: src/react-app/App.css ===
+=== File: src/app/App.css ===
 #root {
   max-width: 1280px;
   margin: 0 auto;
@@ -7662,19 +7667,19 @@ declare abstract class WorkflowInstance {
 }
 
 
-=== File: src/react-app/App.tsx ===
+=== File: src/app/App.tsx ===
 // src/App.tsx
 
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import viteLogo from "/vite.svg";
-import cloudflareLogo from "./assets/Cloudflare_Logo.svg";
-import honoLogo from "./assets/hono.svg";
-import "./App.css";
+import { useState } from 'react';
+import reactLogo from './assets/react.svg';
+import viteLogo from '/vite.svg';
+import cloudflareLogo from './assets/Cloudflare_Logo.svg';
+import honoLogo from './assets/hono.svg';
+import './App.css';
 
 function App() {
   const [count, setCount] = useState(0);
-  const [name, setName] = useState("unknown");
+  const [name, setName] = useState('unknown');
 
   return (
     <>
@@ -7711,7 +7716,7 @@ function App() {
       <div className="card">
         <button
           onClick={() => {
-            fetch("/api/")
+            fetch('/api')
               .then((res) => res.json() as Promise<{ name: string }>)
               .then((data) => setName(data.name));
           }}
@@ -7720,7 +7725,7 @@ function App() {
           Name from API is: {name}
         </button>
         <p>
-          Edit <code>worker/index.ts</code> to change the name
+          Edit <code>api/index.ts</code> to change the name
         </p>
       </div>
       <p className="read-the-docs">Click on the logos to learn more</p>
@@ -7731,7 +7736,8 @@ function App() {
 export default App;
 
 
-=== File: src/react-app/index.css ===
+
+=== File: src/app/index.css ===
 :root {
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
@@ -7802,7 +7808,7 @@ button:focus-visible {
 }
 
 
-=== File: src/react-app/main.tsx ===
+=== File: src/app/main.tsx ===
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
@@ -7815,27 +7821,27 @@ createRoot(document.getElementById("root")!).render(
 );
 
 
-=== File: src/react-app/vite-env.d.ts ===
+=== File: src/app/vite-env.d.ts ===
 /// <reference types="vite/client" />
 
 
-=== File: src/worker/index.ts ===
+=== File: src/api/index.ts ===
 import { Hono } from "hono";
 const app = new Hono<{ Bindings: Env }>();
 
-app.get("/api", (c) => c.json({ name: "Cloudflare" }));
+app.get("/", (c) => c.json({ name: "Safa Framework" }));
 
 export default app;
 
 
-=== File: src/react-app/assets/Cloudflare_Logo.svg ===
+=== File: src/app/assets/Cloudflare_Logo.svg ===
 [Binary or unreadable file]
 
 
-=== File: src/react-app/assets/hono.svg ===
+=== File: src/app/assets/hono.svg ===
 [Binary or unreadable file]
 
 
-=== File: src/react-app/assets/react.svg ===
+=== File: src/app/assets/react.svg ===
 [Binary or unreadable file]
 
